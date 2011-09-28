@@ -16,4 +16,4 @@
 
 package cc.spray.utils
 
-class CantWriteResponseBodyException extends RuntimeException
+case class FormContent(elements: Map[String, String])

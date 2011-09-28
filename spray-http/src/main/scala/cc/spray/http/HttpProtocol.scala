@@ -17,12 +17,12 @@
 
 package cc.spray.http
 
-class HttpVersion private[http] (value: String) {
+class HttpProtocol private[http] (value: String) {
   override def toString = value
-  HttpVersions.register(this, value)
+  HttpProtocols.register(this, value)
 }
 
-object HttpVersions extends ObjectRegistry[String, HttpVersion] {
-  val `HTTP/1.0` = new HttpVersion("HTTP/1.0")
-  val `HTTP/1.1` = new HttpVersion("HTTP/1.1")
+object HttpProtocols extends ObjectRegistry[String, HttpProtocol] {
+  val `HTTP/1.0` = new HttpProtocol("HTTP/1.0")
+  val `HTTP/1.1` = new HttpProtocol("HTTP/1.1")
 }
