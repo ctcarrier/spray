@@ -21,6 +21,8 @@ import http._
 import org.parboiled.common.FileUtils
 import java.io.File
 import StatusCodes._
+import HttpHeaders._
+import java.net.{URL, URLConnection}
 
 private[spray] trait FileAndResourceDirectives {
   this: SimpleDirectives with DetachDirectives =>
@@ -43,7 +45,12 @@ private[spray] trait FileAndResourceDirectives {
   def getFromFile(file: File, charset: Option[HttpCharset] = None,
                   resolver: ContentTypeResolver = DefaultContentTypeResolver): Route = {
     detach {
-      get { _.complete(responseFromFile(file, charset, resolver)) }
+      get { ctx =>
+        responseFromFile(file, charset, resolver) match {
+          case Some(response) => ctx.complete(response)
+          case None => ctx.reject() // reject without specific rejection => same as unmatched "path" directive
+        }
+      }
     }
   }
 
@@ -51,29 +58,29 @@ private[spray] trait FileAndResourceDirectives {
    * Builds an HttpResponse from the content of the given file. If the file cannot be read a "404 NotFound"
    * response is returned. Note that this method is using disk IO which may block the current thread.
    */
-  def responseFromFileName(fileName: String, charset: Option[HttpCharset] = None,
-                       resolver: ContentTypeResolver = DefaultContentTypeResolver): HttpResponse = {
-    responseFromBuffer(FileUtils.readAllBytes(fileName), resolver(fileName, charset))
-  }
-
-  /**
-   * Builds an HttpResponse from the content of the given file. If the file cannot be read a "404 NotFound"
-   * response is returned. Note that this method is using disk IO which may block the current thread.
-   */
   def responseFromFile(file: File, charset: Option[HttpCharset] = None,
-                       resolver: ContentTypeResolver = DefaultContentTypeResolver): HttpResponse = {
-    responseFromBuffer(FileUtils.readAllBytes(file), resolver(file.getName, charset))
+                       resolver: ContentTypeResolver = DefaultContentTypeResolver): Option[HttpResponse] = {
+    responseFromBuffer(
+      lastModified = DateTime(math.min(file.lastModified, System.currentTimeMillis())),
+      buffer = FileUtils.readAllBytes(file),
+      contentType = resolver(file.getName, charset)
+    )
   }
 
   /**
    * Returns a Route that completes GET requests with the content of the given resource. The actual I/O operation is
    * running detached in the context of a newly spawned actor, so it doesn't block the current thread.
-   * If the file cannot be read the Route completes the request with a "404 NotFound" error.
+   * If the resource cannot be read the Route completes the request with a "404 NotFound" error.
    */
   def getFromResource(resourceName: String, charset: Option[HttpCharset] = None,
                       resolver: ContentTypeResolver = DefaultContentTypeResolver): Route = {
     detach {
-      get { _.complete(responseFromResource(resourceName, charset)) }
+      get { ctx =>
+        responseFromResource(resourceName, charset) match {
+          case Some(response) => ctx.complete(response)
+          case None => ctx.reject() // reject without specific rejection => same as unmatched "path" directive
+        }
+      }
     }
   }
   
@@ -82,14 +89,25 @@ private[spray] trait FileAndResourceDirectives {
    * "404 NotFound" response is returned. Note that this method is using disk IO which may block the current thread.
    */
   def responseFromResource(resourceName: String, charset: Option[HttpCharset] = None,
-                           resolver: ContentTypeResolver = DefaultContentTypeResolver): HttpResponse = {
-    responseFromBuffer(FileUtils.readAllBytesFromResource(resourceName), resolver(resourceName, charset))
+                           resolver: ContentTypeResolver = DefaultContentTypeResolver): Option[HttpResponse] = {
+    Option(getClass.getClassLoader.getResource(resourceName)).flatMap { resource =>
+      val urlConn = resource.openConnection()
+      val inputStream = urlConn.getInputStream
+      val response = responseFromBuffer(
+        lastModified = DateTime(math.min(urlConn.getLastModified, System.currentTimeMillis())),
+        buffer = FileUtils.readAllBytes(inputStream),
+        contentType = resolver(resourceName, charset)
+      )
+      inputStream.close()
+      response
+    }
   }
   
-  private def responseFromBuffer(buffer: Array[Byte], contentType: => ContentType): HttpResponse = {
+  private def responseFromBuffer(lastModified: DateTime, buffer: Array[Byte],
+                                 contentType: => ContentType): Option[HttpResponse] = {
     Option(buffer).map { buffer =>
-      HttpResponse(OK, HttpContent(contentType, buffer))
-    }.getOrElse(HttpResponse(NotFound))
+      HttpResponse(OK, List(`Last-Modified`(lastModified)), HttpContent(contentType, buffer))
+    }
   }
 
   /**
@@ -104,10 +122,8 @@ private[spray] trait FileAndResourceDirectives {
                        resolver: ContentTypeResolver = DefaultContentTypeResolver): Route = {
     val base = if (directoryName.endsWith("/")) directoryName else directoryName + "/";
     { ctx =>
-      {
-        val subPath = if (ctx.unmatchedPath.startsWith("/")) ctx.unmatchedPath.substring(1) else ctx.unmatchedPath
-        getFromFileName(base + pathRewriter(subPath), charset, resolver).apply(ctx)
-      }
+      val subPath = if (ctx.unmatchedPath.startsWith("/")) ctx.unmatchedPath.substring(1) else ctx.unmatchedPath
+      getFromFileName(base + pathRewriter(subPath), charset, resolver).apply(ctx)
     }
   }
 
@@ -120,10 +136,8 @@ private[spray] trait FileAndResourceDirectives {
                                resolver: ContentTypeResolver = DefaultContentTypeResolver): Route = {
     val base = if (directoryName.isEmpty) "" else directoryName + "/";
     { ctx =>
-      {
-        val subPath = if (ctx.unmatchedPath.startsWith("/")) ctx.unmatchedPath.substring(1) else ctx.unmatchedPath
-        getFromResource(base + pathRewriter(subPath), charset, resolver).apply(ctx)
-      }
+      val subPath = if (ctx.unmatchedPath.startsWith("/")) ctx.unmatchedPath.substring(1) else ctx.unmatchedPath
+      getFromResource(base + pathRewriter(subPath), charset, resolver).apply(ctx)
     }
   }
 }

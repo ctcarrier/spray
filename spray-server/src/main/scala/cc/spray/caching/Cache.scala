@@ -17,7 +17,8 @@
 package cc.spray
 package caching
 
-import akka.dispatch.{DefaultCompletableFuture, CompletableFuture, Future}
+import utils._
+import akka.dispatch._
 
 /**
  * General interface implemented by all spray cache implementations.
@@ -25,7 +26,7 @@ import akka.dispatch.{DefaultCompletableFuture, CompletableFuture, Future}
 trait Cache[V] {
 
   /**
-   * Selects the (pontentially non-existing) cache entry with the given key.
+   * Selects the (potentially non-existing) cache entry with the given key.
    */
   def apply(key: Any) = new Key(key)
 

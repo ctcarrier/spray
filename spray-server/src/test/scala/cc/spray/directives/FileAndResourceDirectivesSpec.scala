@@ -24,6 +24,7 @@ import org.parboiled.common.FileUtils
 import util.Properties
 import java.io.File
 import test.AbstractSprayTest
+import HttpHeaders._
 
 class FileAndResourceDirectivesSpec extends AbstractSprayTest {
 
@@ -36,19 +37,21 @@ class FileAndResourceDirectivesSpec extends AbstractSprayTest {
     "return a 404 for non-existing files" in {
       test(HttpRequest(GET)) {
         getFromFileName("nonExistentFile")
-      }.response mustEqual HttpResponse(404)
+      }.handled must beFalse
     }
     "return a 404 for directories" in {
       test(HttpRequest(GET)) {
         getFromFileName(Properties.javaHome)
-      }.response mustEqual HttpResponse(404)
+      }.handled must beFalse
     }
     "return the file content with the MediaType matching the file extension" in {
       val file = File.createTempFile("sprayTest", ".PDF")
       FileUtils.writeAllText("This is PDF", file)
-      test(HttpRequest(GET)) {
+      val HttpResponse(_, headers, content, _) = test(HttpRequest(GET)) {
         getFromFileName(file.getPath)
-      }.response.content mustEqual Some(HttpContent(`application/pdf`, "This is PDF"))
+      }.response
+      content mustEqual Some(HttpContent(`application/pdf`, "This is PDF"))
+      headers must have { case `Last-Modified`(dateTime) => dateTime.clicks == file.lastModified }
       file.delete
     }
     "return the file content with MediaType 'application/octet-stream' on unknown file extensions" in {
@@ -70,12 +73,14 @@ class FileAndResourceDirectivesSpec extends AbstractSprayTest {
     "return a 404 for non-existing resources" in {
       test(HttpRequest(GET)) {
         getFromResource("nonExistingResource")
-      }.response mustEqual HttpResponse(404)
+      }.handled must beFalse
     }
     "return the resource content with the MediaType matching the file extension" in {
-      test(HttpRequest(GET)) {
+      val HttpResponse(_, headers, content, _) = test(HttpRequest(GET)) {
         getFromResource("sample.html")
-      }.response.content mustEqual Some(HttpContent(`text/html`, "<p>Lorem ipsum!</p>"))
+      }.response
+      content mustEqual Some(HttpContent(`text/html`, "<p>Lorem ipsum!</p>"))
+      headers must have { case `Last-Modified`(dt) => DateTime(2011, 7, 1) < dt && dt.clicks < System.currentTimeMillis() }
     }
     "return the file content with MediaType 'application/octet-stream' on unknown file extensions" in {
       test(HttpRequest(GET)) {
@@ -88,7 +93,7 @@ class FileAndResourceDirectivesSpec extends AbstractSprayTest {
     "return a 404 for non-existing resources" in {
       test(HttpRequest(GET, "not/found")) {
         getFromResourceDirectory("subDirectory")
-      }.response mustEqual HttpResponse(404)
+      }.handled must beFalse
     }
     "return the resource content with the MediaType matching the file extension" in {
       "example 1" in {

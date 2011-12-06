@@ -17,6 +17,9 @@
 package cc.spray
 package directives
 
+import typeconversion._
+import java.lang.IllegalStateException
+
 private[spray] trait ParameterDirectives {
   this: BasicDirectives =>
 
@@ -27,23 +30,20 @@ private[spray] trait ParameterDirectives {
    * If it can be found the parameters value is extracted and passed as argument to the inner Route building function. 
    */
   def parameter[A](pm: PM[A]): SprayRoute1[A] = filter1[A] { ctx =>
+    val ParamName = pm.name
     pm(ctx.request.queryParams) match {
       case Right(value) => Pass.withTransform(value) {
         _.cancelRejections {
           _ match {
-            case MissingQueryParamRejection(n) if n == pm.name => true
-            case MalformedQueryParamRejection(_, Some(n)) if n == pm.name => true
+            case MissingQueryParamRejection(ParamName) => true
+            case MalformedQueryParamRejection(_, ParamName) => true
             case _ => false
           }
         }
       }
-      case Left(x: MissingQueryParamRejection) => Reject(x)
-      case Left(x) => new Reject(Set(x,
-        RejectionRejection {
-          case MissingQueryParamRejection(n) if n == pm.name => true
-          case _ => false
-        }
-      ))
+      case Left(ContentExpected) => Reject(MissingQueryParamRejection(ParamName))
+      case Left(MalformedContent(errorMsg)) => Reject(MalformedQueryParamRejection(errorMsg, ParamName))
+      case Left(UnsupportedContentType(_)) => throw new IllegalStateException
     }
   }
 
@@ -136,33 +136,37 @@ private[spray] trait ParameterDirectives {
     filter { ctx => if (allRPM.forall(_(ctx.request.queryParams))) Pass() else Reject() }
   }
 
-  implicit def fromSymbol(name: Symbol) = fromString(name.name)  
-  
-  implicit def fromString(name: String) = new ParameterMatcher[String](name, SimpleParsers.SimpleStringParser)
-}
+  implicit def symbol2PM(name: Symbol)(implicit ev: FromStringOptionDeserializer[String]) =
+    new ParameterMatcher[String](name.name)
+  implicit def string2PM(name: String)(implicit ev: FromStringOptionDeserializer[String]) =
+    new ParameterMatcher[String](name)
+  implicit def nameReceptacle2PM[A :FromStringOptionDeserializer](r: NameReceptacle[A]) =
+    new ParameterMatcher[A](r.name)
+  implicit def nameDeserializerReceptacle2PM[A](r: NameDeserializerReceptacle[A]) =
+    new ParameterMatcher[A](r.name)(r.deserializer)
+  implicit def nameDefaultReceptacle2PM[A :FromStringOptionDeserializer](r: NameDefaultReceptacle[A]) =
+    new ParameterMatcher[A](r.name)(withDefaultDeserializer(r.default))
+  implicit def nameDeserializerDefaultReceptacle2PM[A](r: NameDeserializerDefaultReceptacle[A]) =
+    new ParameterMatcher[A](r.name)(withDefaultDeserializer(r.default)(r.deserializer))
+  implicit def requiredValueReceptacle2RPM[A :FromStringOptionDeserializer]
+    (r: RequiredValueReceptacle[A]): RequiredParameterMatcher = { paramsMap =>
+    fromStringOptionDeserializer[A].apply(paramsMap.get(r.name)) == Right(r.requiredValue)
+  }
+  implicit def requiredValueDeserializerReceptacle2RPM[A]
+    (r: RequiredValueDeserializerReceptacle[A]): RequiredParameterMatcher = { paramsMap =>
+    r.deserializer(paramsMap.get(r.name)) == Right(r.requiredValue)
+  }
 
-class ParameterMatcher[A](val name: String, val parser: SimpleParser[A]) {
-  def apply(params: Map[String, String]): Either[Rejection, A] = {
-    params.get(name) match {
-      case Some(value) => parser(value).left.map(MalformedQueryParamRejection(_, Some(name)))
-      case None => notFound
+  private def withDefaultDeserializer[A :FromStringOptionDeserializer](default: A): FromStringOptionDeserializer[A] = {
+    new FromStringOptionDeserializer[A] {
+      def apply(s: Option[String]) = fromStringOptionDeserializer[A].apply(s).left.flatMap {
+        case ContentExpected => Right(default)
+        case error => Left(error)
+      }
     }
   }
+}
 
-  protected def notFound: Either[Rejection, A] = Left(MissingQueryParamRejection(name))
-  
-  def ? = new ParameterMatcher[Option[A]](name,
-    new SimpleParser[Option[A]] { def apply(s: String) = parser(s).fold(Left(_), x => Right(Some(x))) }) {
-    override def notFound = Right(None)
-  }
-  
-  def ? [B :SimpleParser](default: B) = new ParameterMatcher[B](name, simpleParser[B]) {
-    override def notFound = Right(default)
-  }
-  
-  def as[B :SimpleParser] = new ParameterMatcher[B](name, simpleParser[B])
-  
-  def ! [B :SimpleParser](requiredValue: B): RequiredParameterMatcher = {
-    _.get(name).flatMap(simpleParser[B].apply(_).right.toOption) == Some(requiredValue)
-  }
+class ParameterMatcher[A: FromStringOptionDeserializer](val name: String) extends Deserializer[Map[String, String], A] {
+  def apply(params: Map[String, String]) = fromStringOptionDeserializer[A].apply(params.get(name))
 }

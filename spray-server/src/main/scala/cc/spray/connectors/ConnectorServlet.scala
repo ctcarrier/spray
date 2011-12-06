@@ -25,32 +25,34 @@ import http._
 import HttpHeaders._
 import StatusCodes._
 import MediaTypes._
+import java.util.concurrent.{TimeUnit, CountDownLatch}
 import java.io.{IOException, InputStream}
 
 private[connectors] abstract class ConnectorServlet(containerName: String) extends HttpServlet with Logging {
-  lazy val rootService = actor(SpraySettings.RootActorId)
-  lazy val timeoutActor = actor(SpraySettings.TimeoutActorId)
+  lazy val rootService = actor(SprayServerSettings.RootActorId)
+  lazy val timeoutActor = actor(SprayServerSettings.TimeoutActorId)
+  val EmptyByteArray = new Array[Byte](0)
   var timeout: Int = _
-  val EmptyResponder: RoutingResult => Unit = { _ => }
 
   override def init() {
     log.info("Initializing %s <=> Spray Connector", containerName)
-    timeout = SpraySettings.AsyncTimeout
+    timeout = SprayServerSettings.RequestTimeout
     log.info("Async timeout for all requests is %s ms", timeout)
   }
 
   def requestContext(req: HttpServletRequest, resp: HttpServletResponse,
-                     responderFactory: RequestContext => RoutingResult => Unit): Option[RequestContext] = {
+                     responder: RoutingResult => Unit): Option[RequestContext] = {
     try {
-      val context = RequestContext(
-        request = httpRequest(req),
-        remoteHost = req.getRemoteAddr,
-        responder = EmptyResponder
-      )
-      Some(context.withResponder(responderFactory(context)))
+      Some {
+        RequestContext(
+          request = httpRequest(req),
+          remoteHost = req.getRemoteAddr,
+          responder = responder
+        )
+      }
     } catch {
-      case HttpException(failure, reason) => respond(resp, HttpResponse(failure.value, reason)); None
-      case e: Exception => respond(resp, HttpResponse(500, "Internal Server Error:\n" + e.toString)); None
+      case HttpException(failure, reason) => respond(req, resp, HttpResponse(failure.value, reason)); None
+      case e: Exception => respond(req, resp, HttpResponse(500, "Internal Server Error:\n" + e.toString)); None
     }
   }
 
@@ -70,10 +72,9 @@ private[connectors] abstract class ConnectorServlet(containerName: String) exten
   }
 
   def rebuildUri(req: HttpServletRequest) = {
-    val buffer = req.getRequestURL
+    val uri = req.getRequestURI
     val queryString = req.getQueryString
-    if (queryString != null && queryString.length > 1) buffer.append('?').append(queryString)
-    buffer.toString
+    if (queryString != null && queryString.length > 1) uri + '?' + queryString else uri
   }
 
   def httpContent(inputStream: InputStream, contentTypeHeader: Option[`Content-Type`],
@@ -81,15 +82,27 @@ private[connectors] abstract class ConnectorServlet(containerName: String) exten
     contentLengthHeader.flatMap {
       case `Content-Length`(0) => None
       case `Content-Length`(contentLength) => {
-        val buf = new Array[Byte](contentLength)
-        if (inputStream.read(buf) != contentLength) throw new HttpException(BadRequest, "Illegal Servlet request content")
+        val body = if (contentLength == 0) EmptyByteArray else try {
+          val buf = new Array[Byte](contentLength)
+          var bytesRead = 0
+          while (bytesRead < contentLength) {
+            val count = inputStream.read(buf, bytesRead, contentLength - bytesRead)
+            if (count >= 0) bytesRead += count
+            else throw new HttpException(BadRequest, "Illegal Servlet request entity, expected length " +
+                    contentLength + " but only has length " + bytesRead)
+          }
+          buf
+        } catch {
+          case e: IOException =>
+            throw new HttpException(InternalServerError, "Could not read request entity due to " + e.toString)
+        }
         val contentType = contentTypeHeader.map(_.contentType).getOrElse(ContentType(`application/octet-stream`))
-        Some(HttpContent(contentType, buf))
+        Some(HttpContent(contentType, body))
       }
     }
   }
 
-  def respond(servletResponse: HttpServletResponse, response: HttpResponse) {
+  def respond(req: HttpServletRequest, servletResponse: HttpServletResponse, response: HttpResponse) {
     try {
       servletResponse.setStatus(response.status.value)
       response.headers.foreach(header => servletResponse.addHeader(header.name, header.value))
@@ -99,15 +112,38 @@ private[connectors] abstract class ConnectorServlet(containerName: String) exten
         servletResponse.getOutputStream.write(content.buffer)
       }
     } catch {
-      case e: IOException => log.error("Could not write response body, " +
-                "probably the request has either timed out or the client has disconnected")
-      case e: Exception => log.error(e, "Could not complete request")
+      case e: IOException => log.error("Could not write response body of %s, probably the request has either timed out" +
+        "or the client has disconnected (%s)", requestString(req), e)
+      case e: Exception => log.error(e, "Could not complete %s", requestString(req))
     }
   }
 
-  def responder(f: HttpResponse => Unit): RoutingResult => Unit = {
-    case Respond(response) => f(response)
+  def responderFor(req: HttpServletRequest)(f: HttpResponse => Unit): RoutingResult => Unit = {
+    case Respond(response) =>
+      try {
+        f(response)
+      } catch {
+        case e: IllegalStateException => log.error("Could not complete %s, it probably timed out and has therefore" +
+          "already been completed (%s)", requestString(req), e)
+        case e: Exception => log.error("Could not complete %s due to %s", requestString(req), e)
+      }
     case _: Reject => throw new IllegalStateException
   }
+
+  def handleTimeout(req: HttpServletRequest, resp: HttpServletResponse)(complete: => Unit) {
+    val latch = new CountDownLatch(1);
+    val responder = responderFor(req) { response =>
+      respond(req, resp, response)
+      complete
+      latch.countDown()
+    }
+    requestContext(req, resp, responder).foreach { context =>
+      log.error("Timeout of %s", context.request)
+      timeoutActor ! Timeout(context)
+      latch.await(timeout, TimeUnit.MILLISECONDS) // give the timeoutActor another `timeout` ms for completing
+    }
+  }
+
+  def requestString(req: HttpServletRequest) = req.getMethod + " request to '" + rebuildUri(req) + "'"
 
 }
