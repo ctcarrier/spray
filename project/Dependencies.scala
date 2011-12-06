@@ -15,6 +15,7 @@ object Dependencies {
     val sprayJson = "1.0.1"
     val slf4j     = "1.6.1"
     val logback   = "0.9.29"
+    val liftJson  = "2.4-M2"
   }
 
   object Compile {
@@ -33,6 +34,9 @@ object Dependencies {
     val jetty7Async   = "org.eclipse.jetty"         %   "jetty-continuation"        % "7.5.1.v20110908" % "provided"
     val tomcat6Async  = "org.atmosphere"            %   "atmosphere-compat-tomcat"  % "0.7.1"           % "provided"
     val slf4j         = "org.slf4j"                 %   "slf4j-api"                 % V.slf4j           % "provided"
+    val liftJson      = "net.liftweb"               %   "lift-json_2.9.0-1"         % V.liftJson        % "provided"
+    val liftJsonExt   = "net.liftweb"               %   "lift-json-ext_2.9.0-1"     % V.liftJson        % "provided"
+
   }
 
   object Test {
