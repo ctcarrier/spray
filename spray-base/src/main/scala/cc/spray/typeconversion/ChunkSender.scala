@@ -15,21 +15,23 @@
  */
 
 package cc.spray
+package typeconversion
 
 import http._
-import StatusCodes._
-import utils.{IllegalResponseException, Logging}
+import akka.dispatch.Future
 
-trait ErrorHandling {
-  this: Logging =>
+trait ChunkSender {
 
-  protected[spray] def responseForException(request: Any, e: Exception): HttpResponse = {
-    log.error(e, "Error during processing of request %s", request)
-    e match {
-      case HttpException(failure, reason) => HttpResponse(failure, reason)
-      case e: IllegalResponseException => throw e
-      case e: Exception => HttpResponse(InternalServerError, "Internal Server Error:\n" + e.toString)
-    }
-  }
+  /**
+   * Sends the given [[cc.spray.http.MessageChunk]] back to the client and returns a Future that is completed when the
+   * chunk has actually and successfully been dispatched to the network layer. Should the client prematurely close
+   * the connection the future is completed with a [[cc.spray.can.ClientClosedConnectionException]]
+   */
+  def sendChunk(chunk: MessageChunk): Future[Unit]
+
+  /**
+   * Finalizes the chunked (streaming) response.
+   */
+  def close(extensions: List[ChunkExtension] = Nil, trailer: List[HttpHeader] = Nil)
 
 }

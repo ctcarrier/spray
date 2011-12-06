@@ -7,6 +7,7 @@ import akka.util.Duration
 import util.Random
 import akka.dispatch.Future
 import org.specs2.matcher.Matcher
+import cc.spray.utils.identityFunc
 
 class LruCacheSpec extends Specification {
 
@@ -60,13 +61,13 @@ class LruCacheSpec extends Specification {
       cache.store.toString mustEqual "Map(3 -> C, 4 -> D)"
     }
     "expire old entries" in {
-      val cache = LruCache[String](ttl = Duration("20 ms"))
+      val cache = LruCache[String](ttl = Duration("30 ms"))
       cache(1)("A").get mustEqual "A"
       cache(2)("B").get mustEqual "B"
-      Thread.sleep(10)
+      Thread.sleep(20)
       cache(3)("C").get mustEqual "C"
       cache.store.toString mustEqual "Map(1 -> A, 2 -> B, 3 -> C)"
-      Thread.sleep(10)
+      Thread.sleep(20)
       cache.get(2) must beNone // triggers clean up, also of earlier entries
       cache.store.toString mustEqual "Map(3 -> C)"
     }
@@ -81,7 +82,7 @@ class LruCacheSpec extends Specification {
     "be thread-safe" in {
       val cache = LruCache[Int](maxEntries = 1000)
       // exercise the cache from 10 parallel "tracks" (threads)
-      val views = Future.traverse(Seq.tabulate(10)(identity), Long.MaxValue) { track =>
+      val views = Future.traverse(Seq.tabulate(10)(identityFunc), Long.MaxValue) { track =>
         Future {
           val array = Array.fill(1000)(0) // our view of the cache
           val rand = new Random(track)

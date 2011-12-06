@@ -28,9 +28,9 @@ object SprayBuild extends Build {
     .settings(moduleSettings: _*)
     .settings(
       libraryDependencies ++= Seq(
-        Compile.akkaActor,
         Compile.parboiled,
         Compile.mimepull,
+        Provided.akkaActor,
         Provided.sprayJson,
         Provided.sprayCan,
         Provided.slf4j,
@@ -44,7 +44,7 @@ object SprayBuild extends Build {
     .settings(moduleSettings: _*)
     .settings(
       libraryDependencies ++= Seq(
-        Compile.akkaActor,
+        Provided.akkaActor,
         Provided.servlet30,
         Provided.jetty7Async,
         Provided.tomcat6Async,
@@ -58,8 +58,8 @@ object SprayBuild extends Build {
     .settings(moduleSettings: _*)
     .settings(
       libraryDependencies ++= Seq(
-        Compile.akkaActor,
         Compile.sprayCan,
+        Provided.akkaActor,
         Test.specs2,
         Test.slf4j,
         Test.logback
@@ -82,7 +82,6 @@ object SprayBuild extends Build {
     .settings(
       libraryDependencies ++= Seq(
         Compile.akkaActor,
-        Compile.sprayCan,
         Compile.sprayJson,
         Test.specs2,
         Runtime.akkaSlf4j,

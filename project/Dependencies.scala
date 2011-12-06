@@ -9,10 +9,10 @@ object Dependencies {
   )
 
   object V {
-    val akka      = "1.2"
+    val akka      = "1.3-RC1"
     val jetty     = "8.0.3.v20111011"
-    val sprayCan  = "0.9.1"
-    val sprayJson = "1.0.1"
+    val sprayCan  = "0.9.2-SNAPSHOT"
+    val sprayJson = "1.1.0-SNAPSHOT"
     val slf4j     = "1.6.1"
     val logback   = "0.9.29"
     val liftJson  = "2.4-M2"
@@ -23,11 +23,12 @@ object Dependencies {
     val parboiled     = "org.parboiled"             %   "parboiled-scala"           % "1.0.2"     % "compile"
     val mimepull      = "org.jvnet"                 %   "mimepull"                  % "1.6"       % "compile"
     val sprayCan      = "cc.spray.can"              %   "spray-can"                 % V.sprayCan  % "compile"
-    val pegdown       = "org.pegdown"               %   "pegdown"                   % "1.1.0"     % "compile"
     val sprayJson     = "cc.spray.json"             %%  "spray-json"                % V.sprayJson % "compile"
+    val pegdown       = "org.pegdown"               %   "pegdown"                   % "1.1.0"     % "compile"
   }
 
   object Provided {
+    val akkaActor     = "se.scalablesolutions.akka" %   "akka-actor"                % V.akka            % "provided"
     val sprayJson     = "cc.spray.json"             %%  "spray-json"                % V.sprayJson       % "provided"
     val sprayCan      = "cc.spray.can"              %   "spray-can"                 % V.sprayCan        % "provided"
     val servlet30     = "org.glassfish"             %   "javax.servlet"             % "3.0"             % "provided"

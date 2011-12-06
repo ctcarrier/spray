@@ -21,13 +21,14 @@ import utils._
 import http._
 import HttpMethods._
 import test.AbstractSprayTest
+import caching.LruCache
 
 class CacheDirectivesSpec extends AbstractSprayTest {
 
-  "the cache directive" should {
+  "the cacheResults directive" should {
     val countingService = {
       var i = 0
-      cache {
+      cacheResults(LruCache()) {
         _.complete {
           i += 1
           i.toString
@@ -38,7 +39,7 @@ class CacheDirectivesSpec extends AbstractSprayTest {
       var i = 0
       cache { _.complete { i += 1; HttpResponse(500 + i) } }
     }
-    def prime(route: Route) = make(route) { _(RequestContext(HttpRequest(GET))) }
+    def prime(route: Route) = make(route) { _(RequestContext(HttpRequest(GET), RequestResponder(_ => ()))) }
     
     "return and cache the response of the first GET" in {      
       test(HttpRequest(GET)) {
