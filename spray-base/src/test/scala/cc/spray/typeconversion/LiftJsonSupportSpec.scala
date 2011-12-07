@@ -16,14 +16,15 @@ class LiftJsonSupportSpec extends Specification with LiftJsonSupport {
 
   implicit val formats = DefaultFormats
 
-  case class Employee(fname: String, name: String, age: Int, id: Long)
+  case class Employee(fname: String, name: String, age: Int, id: Long, boardMember: Boolean)
 
-  val employeeA = Employee("Frank", "Smith", 42, 12345)
+  val employeeA = Employee("Frank", "Smith", 42, 12345, false)
   val employeeAJson = """{
     "fname":"Frank",
     "name":"Smith",
     "age":42,
-    "id":12345
+    "id":12345,
+    "boardMember": false
   }"""
 
   def is = args() ^
@@ -33,8 +34,8 @@ class LiftJsonSupportSpec extends Specification with LiftJsonSupport {
     end
 
     def unmarshallTest() = {
-      (HttpContent(`application/json`, employeeAJson).as[Employee].right.get ==
-              Employee("Frank", "Smith", 42, 12345)) must beTrue
+      HttpContent(`application/json`, employeeAJson).as[Employee] must be equalTo
+              Right(Employee("Frank", "Smith", 42, 12345, false))
     }
 
   def marshallTest() = {

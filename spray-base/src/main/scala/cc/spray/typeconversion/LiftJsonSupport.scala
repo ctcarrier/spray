@@ -16,7 +16,7 @@ import net.liftweb.json._
 trait LiftJsonSupport {
    implicit val formats: Formats
 
-   implicit def liftJsonUnmarshaller[A <: Product :Manifest] = new UnmarshallerBase[A] {
+   implicit def liftJsonUnmarshaller[A <: Product :Manifest] = new SimpleUnmarshaller[A] {
      val canUnmarshalFrom = ContentTypeRange(`application/json`) :: Nil
      def unmarshal(content: HttpContent) = protect {
        try {
@@ -30,7 +30,7 @@ trait LiftJsonSupport {
      }
    }
 
-   implicit def liftJsonMarshaller[A <: AnyRef] = new MarshallerBase[A] {
+   implicit def liftJsonMarshaller[A <: AnyRef] = new SimpleMarshaller[A] {
      val canMarshalTo = ContentType(`application/json`) :: Nil
      def marshal(value: A, contentType: ContentType) = {
              val jsonSource = write(value)
