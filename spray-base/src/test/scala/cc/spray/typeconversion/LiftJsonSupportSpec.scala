@@ -12,20 +12,15 @@ import net.liftweb.json.DefaultFormats
  * @version 9/26/11
  */
 
+//needs to be defined at top level to avoid some test failures due to how lift-json works
+case class Employee(fname: String, name: String, age: Int, id: Long, boardMember: Boolean)
+
 class LiftJsonSupportSpec extends Specification with LiftJsonSupport {
 
   implicit val formats = DefaultFormats
 
-  case class Employee(fname: String, name: String, age: Int, id: Long, boardMember: Boolean)
-
   val employeeA = Employee("Frank", "Smith", 42, 12345, false)
-  val employeeAJson = """{
-    "fname":"Frank",
-    "name":"Smith",
-    "age":42,
-    "id":12345,
-    "boardMember": false
-  }"""
+  val employeeAJson = """{"fname":"Frank","name":"Smith","age":42,"id":12345,"boardMember":false}"""
 
   def is = args() ^
     "The LiftJsonSupport should" ^
