@@ -22,6 +22,7 @@ import HttpHeaders._
 import MediaTypes._
 import typeconversion._
 import akka.dispatch.Future
+import utils.IllegalResponseException
 
 /**
  * Immutable object encapsulating the context of an [[cc.spray.http.HttpRequest]]
@@ -113,14 +114,6 @@ case class RequestContext(
   }
 
   /**
-   * Schedules the completion of the request with status "200 Ok" and the response content created by marshalling the
-   * future result using the in-scope marshaller for A.
-   */
-  def complete[A :Marshaller](future: Future[A]) {
-    future.onComplete(future => complete(future.resultOrException.get))
-  }
-
-  /**
    * Completes the request with status "200 Ok" and the response content created by marshalling the given object using
    * the in-scope marshaller for the type.
    */
@@ -150,6 +143,7 @@ case class RequestContext(
   private[spray] def marshallingContext(status: StatusCode, headers: List[HttpHeader]) = {
     new MarshallingContext {
       def marshalTo(content: HttpContent) { complete(HttpResponse(status, headers, content)) }
+      def handleError(error: Throwable) { fail(error) }
       def startChunkedMessage(contentType: ContentType) =
         startChunkedResponse(HttpResponse(status, headers, HttpContent(contentType, utils.EmptyByteArray)))
     }
@@ -186,6 +180,19 @@ case class RequestContext(
     withReject(rejections => responder.reject(rejections + RejectionRejection(reject)))
 
   /**
+   * Completes the request with a response corresponding to the given Throwable, with [[cc.spray.http.HttpException]]
+   * instances receiving special handling.
+   */
+  def fail(error: Throwable) {
+    complete {
+      error match {
+        case HttpException(failure, reason) => HttpResponse(failure, reason)
+        case e => HttpResponse(InternalServerError, "Internal Server Error:\n" + e.toString)
+      }
+    }
+  }
+
+  /**
    * Completes the request with the given [[cc.spray.http.HttpFailure]].
    */
   def fail(status: HttpFailure) {
@@ -209,15 +216,21 @@ case class RequestContext(
   }
   
   /**
-   * Completes the request with a 301 redirection response to the given URI.
+   * Completes the request with redirection response of the given type to the given URI.
+   * The default redirectionType is a temporary `302 Found`.
    */
   def redirect(uri: String, redirectionType: Redirection = Found) {
     complete {
       HttpResponse(
         status = redirectionType,
         headers = Location(uri) :: Nil,
-        content = HttpContent(`text/html`,
-          "The requested resource temporarily resides under this <a href=\"" + uri + "\">URI</a>.")
+        content = redirectionType match {
+          case Found =>
+            HttpContent(`text/html`, "The requested resource temporarily resides under <a href=\"" + uri + "\">this URI</a>.")
+          case MovedPermanently =>
+            HttpContent(`text/html`, "This and all future requests should be directed to <a href=\"" + uri + "\">this URI</a>.")
+          case _ => HttpContent(redirectionType.defaultMessage)
+        }
       )
     }
   }
@@ -251,6 +264,7 @@ case class RequestContext(
         converter {
           new MarshallingContext {
             def marshalTo(content: HttpContent) { marshalled = Some(content) }
+            def handleError(error: Throwable) { fail(error) }
             def startChunkedMessage(contentType: ContentType) = sys.error("Cannot use a marshaller for " +
               "'request.startChunkedResponse' that itself marshalls to a chunked response")
           }
