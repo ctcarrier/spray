@@ -24,8 +24,8 @@ class LiftJsonSupportSpec extends Specification with LiftJsonSupport {
 
   def is = args() ^
     "The LiftJsonSupport should" ^
-    "provide unmarshalling support" ! unmarshallTest() ^
-    "and return 404 for a non-existent resource" ! marshallTest() ^
+    "provide unmarshalling support for a case class" ! unmarshallTest() ^
+    "provide marshalling support for a case class" ! marshallTest() ^
     end
 
     def unmarshallTest() = {
